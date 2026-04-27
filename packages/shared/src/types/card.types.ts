@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────
 //  card.types.ts
-//  Fundamental card domain types.
-//  All game logic builds on top of these.
+//  40-card deck: 4 suits × 10 ranks (Ace–Ten).
+//  No Jack, Queen or King — per game rules.
+//  Card value = rank value (Ace=1 … Ten=10).
 // ─────────────────────────────────────────────
 
 export enum Suit {
@@ -11,6 +12,7 @@ export enum Suit {
   Clubs    = "CLUBS",
 }
 
+/** Ranks Ace(1) through Ten(10). No face cards in this game. */
 export enum Rank {
   Ace   = 1,
   Two   = 2,
@@ -25,52 +27,64 @@ export enum Rank {
 }
 
 export interface Card {
-  /** Unique identifier within a deck instance, e.g. "SPADES_1" */
+  /** Unique identifier, e.g. "SPADES_1", "DIAMONDS_7" */
   id: string;
   suit: Suit;
   rank: Rank;
-  /** Face-up or hidden (opponent's hand view) */
+  /** true = visible to all; false = hidden (opponent's hand) */
   faceUp: boolean;
 }
 
-/** A card that has not yet been revealed to a specific player */
+/** Opponent's card: identity concealed, only the id is exposed */
 export type HiddenCard = Omit<Card, "suit" | "rank"> & {
   suit: null;
   rank: null;
   faceUp: false;
 };
 
-/** Union useful for rendering an opponent's hand */
+/** Union for rendering — own hand: Card; opponents: HiddenCard */
 export type AnyCard = Card | HiddenCard;
 
+// ── Type guards ───────────────────────────────
+
 export function isHiddenCard(card: AnyCard): card is HiddenCard {
-  return !card.faceUp;
+  return card.suit === null;
 }
 
-/** Human-readable label for a rank, e.g. Rank.Jack → "J" */
+export function isRevealedCard(card: AnyCard): card is Card {
+  return card.suit !== null;
+}
+
+// ── Value & display ───────────────────────────
+
+/**
+ * Point value of a card in the capture/sum mechanic.
+ * Equals the numeric rank: Ace = 1, Seven = 7, Ten = 10.
+ */
+export function cardValue(card: Card): number {
+  return card.rank;
+}
+
+/** "7", "A", "10" … */
 export function rankLabel(rank: Rank): string {
-  const labels: Record<Rank, string> = {
-    [Rank.Ace]:   "A",
-    [Rank.Two]:   "2",
-    [Rank.Three]: "3",
-    [Rank.Four]:  "4",
-    [Rank.Five]:  "5",
-    [Rank.Six]:   "6",
-    [Rank.Seven]: "7",
-    [Rank.Eight]: "8",
-    [Rank.Nine]:  "9",
-    [Rank.Ten]:   "10",
-  };
-  return labels[rank];
+  if (rank === Rank.Ace) return "A";
+  return String(rank);
 }
 
-/** Human-readable label for a suit, e.g. Suit.Hearts → "♥" */
+/** "♠" "♥" "♦" "♣" */
 export function suitSymbol(suit: Suit): string {
-  const symbols: Record<Suit, string> = {
+  const map: Record<Suit, string> = {
     [Suit.Spades]:   "♠",
     [Suit.Hearts]:   "♥",
     [Suit.Diamonds]: "♦",
     [Suit.Clubs]:    "♣",
   };
-  return symbols[suit];
+  return map[suit];
+}
+
+/** Full label: "A♥", "7♦", "🂠" (hidden) */
+export function cardLabel(card: AnyCard): string {
+  if (isHiddenCard(card)) return "🂠";
+  const c = card as Card;
+  return `${rankLabel(c.rank)}${suitSymbol(c.suit)}`;
 }

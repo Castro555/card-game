@@ -9,44 +9,38 @@ import type { PublicPlayer } from "./player.types";
 // ── Status ────────────────────────────────────
 
 export enum RoomStatus {
-  /** Waiting for players to join */
   Waiting    = "WAITING",
-  /** All players ready; game is running */
   InProgress = "IN_PROGRESS",
-  /** Game finished; scores visible */
   Finished   = "FINISHED",
 }
 
 // ── Core model ───────────────────────────────
 
 export interface Room {
-  /** Short human-readable code shared with friends, e.g. "XK92" */
+  /** Short human-readable code, e.g. "XK92" */
   code: string;
-  /** Unique internal ID (UUID) */
   id: string;
   status: RoomStatus;
-  /** All players currently in the room (public view) */
   players: PublicPlayer[];
-  /** Socket ID of the host player */
   hostId: string;
-  /** Maximum allowed players (2–4) */
   maxPlayers: number;
-  /** Current round number (1-indexed) */
-  round: number;
-  /** Total rounds to play before game ends */
-  totalRounds: number;
-  /** ISO timestamp when the room was created */
+
+  /**
+   * Points needed to win the match.
+   * Configured by the host before the game starts.
+   */
+  targetScore: number;
+
   createdAt: string;
-  /** ISO timestamp when the game started, null if not yet started */
   startedAt: string | null;
 }
 
-// ── Request / response payloads ───────────────
+// ── Payloads ──────────────────────────────────
 
 export interface CreateRoomPayload {
   playerName: string;
-  maxPlayers?: number;   // defaults to 4
-  totalRounds?: number;  // defaults to 1
+  maxPlayers?: number;  // defaults to 4
+  targetScore?: number; // defaults to ScoringConfig.DEFAULT_TARGET_SCORE
 }
 
 export interface JoinRoomPayload {

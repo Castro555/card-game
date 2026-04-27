@@ -1,65 +1,75 @@
 // ─────────────────────────────────────────────
 //  socket.types.ts
 //  Strict typing for every Socket.io event.
-//  Import this on BOTH client and server so
-//  mismatches are caught at compile time.
+//  Import on BOTH client and server — type
+//  mismatches become compile errors, not bugs.
 // ─────────────────────────────────────────────
 
 import type { Room, CreateRoomPayload, JoinRoomPayload } from "./room.types";
-import type { PersonalGameState, PlayCardAction, DrawCardAction } from "./game.types";
+import type { PersonalGameState, GameAction, GameScoreResult } from "./game.types";
 import type { PublicPlayer } from "./player.types";
 
 // ── Error envelope ───────────────────────────
+
+export enum SocketErrorCode {
+  RoomNotFound     = "ROOM_NOT_FOUND",
+  RoomFull         = "ROOM_FULL",
+  RoomInProgress   = "ROOM_IN_PROGRESS",
+  NotYourTurn      = "NOT_YOUR_TURN",
+  InvalidAction    = "INVALID_ACTION",
+  InvalidCapture   = "INVALID_CAPTURE",   // sum ≠ 15, or card not on table
+  CardNotInHand    = "CARD_NOT_IN_HAND",
+  NotEnoughPlayers = "NOT_ENOUGH_PLAYERS",
+  NotHost          = "NOT_HOST",
+  AlreadyInRoom    = "ALREADY_IN_ROOM",
+  GameNotStarted   = "GAME_NOT_STARTED",
+  UnknownError     = "UNKNOWN_ERROR",
+}
 
 export interface SocketError {
   code: SocketErrorCode;
   message: string;
 }
 
-export enum SocketErrorCode {
-  RoomNotFound      = "ROOM_NOT_FOUND",
-  RoomFull          = "ROOM_FULL",
-  RoomInProgress    = "ROOM_IN_PROGRESS",
-  NotYourTurn       = "NOT_YOUR_TURN",
-  InvalidCard       = "INVALID_CARD",
-  NotEnoughPlayers  = "NOT_ENOUGH_PLAYERS",
-  NotHost           = "NOT_HOST",
-  AlreadyInRoom     = "ALREADY_IN_ROOM",
-  GameNotStarted    = "GAME_NOT_STARTED",
-  UnknownError      = "UNKNOWN_ERROR",
-}
+// ── Ack envelope ─────────────────────────────
 
-// ── Client → Server events ───────────────────
+/**
+ * Every client event that expects a server confirmation
+ * receives one of these in its callback.
+ */
+export type AckResponse<T> =
+  | { success: true;  data: T }
+  | { success: false; error: SocketError };
+
+// ── Client → Server ───────────────────────────
 
 export interface ClientToServerEvents {
   // Room lifecycle
   "room:create": (
     payload: CreateRoomPayload,
-    ack: (response: AckResponse<{ room: Room }>) => void
+    ack: (res: AckResponse<{ room: Room }>) => void
   ) => void;
 
   "room:join": (
     payload: JoinRoomPayload,
-    ack: (response: AckResponse<{ room: Room }>) => void
+    ack: (res: AckResponse<{ room: Room }>) => void
   ) => void;
 
   "room:leave": (
-    ack: (response: AckResponse<void>) => void
+    ack: (res: AckResponse<void>) => void
   ) => void;
 
   "room:start": (
-    ack: (response: AckResponse<void>) => void
+    ack: (res: AckResponse<void>) => void
   ) => void;
 
-  // In-game actions
-  "game:playCard": (
-    payload: PlayCardAction,
-    ack: (response: AckResponse<void>) => void
-  ) => void;
-
-  "game:drawCard": (
-    payload: DrawCardAction,
-    ack: (response: AckResponse<void>) => void
+  /**
+   * Single event for both CaptureAction and LayAction.
+   * The server discriminates on action.type.
+   */
+  "game:action": (
+    action: GameAction,
+    ack: (res: AckResponse<void>) => void
   ) => void;
 
   // Chat
@@ -69,7 +79,7 @@ export interface ClientToServerEvents {
   "ping": (ack: (timestamp: number) => void) => void;
 }
 
-// ── Server → Client events ───────────────────
+// ── Server → Client ───────────────────────────
 
 export interface ServerToClientEvents {
   // Room updates
@@ -79,11 +89,44 @@ export interface ServerToClientEvents {
 
   // Game flow
   "game:started":       (state: PersonalGameState) => void;
+
+  /**
+   * Sent to each player individually after every action.
+   * Contains their personalised view of the board.
+   */
   "game:stateUpdate":   (state: PersonalGameState) => void;
-  "game:yourTurn":      (payload: { timeoutSeconds: number }) => void;
+
+  /** Signals whose turn it is (broadcast to room) */
+  "game:yourTurn":      (payload: { playerId: string; timeoutSeconds: number }) => void;
+
+  /** A player was auto-skipped due to timeout */
   "game:turnSkipped":   (payload: { playerId: string; reason: "timeout" }) => void;
-  "game:roundEnded":    (payload: { roundNumber: number; scores: Record<string, number> }) => void;
-  "game:ended":         (payload: { winnerId: string; finalScores: Record<string, number> }) => void;
+
+  /**
+   * Sent when all hands are empty and new cards are dealt.
+   * dealNumber reflects the new deal index.
+   */
+  "game:newDeal":       (payload: { dealNumber: number; totalDeals: number }) => void;
+
+  /**
+   * Sent when the last hand is exhausted and remaining table
+   * cards are assigned to lastCapturePlayerId.
+   */
+  "game:tableCardsAwarded": (payload: {
+    playerId: string;
+    playerName: string;
+    cardCount: number;
+  }) => void;
+
+  /** Full scoring breakdown at game end */
+  "game:scored":        (result: GameScoreResult) => void;
+
+  /** Match is over — a player reached targetScore */
+  "game:ended":         (payload: {
+    matchWinnerId: string;
+    matchWinnerName: string;
+    finalMatchScores: Record<string, number>;
+  }) => void;
 
   // Player connectivity
   "player:reconnected": (player: PublicPlayer) => void;
@@ -92,17 +135,17 @@ export interface ServerToClientEvents {
   // Chat
   "chat:message":       (payload: ChatMessage) => void;
 
-  // Errors
+  // Error (sent to a single client)
   "error":              (error: SocketError) => void;
 }
 
-// ── Inter-server events (for Redis Pub/Sub) ──
+// ── Inter-server events (Redis Pub/Sub) ──────
 
 export interface InterServerEvents {
   "server:roomUpdate": (roomId: string) => void;
 }
 
-// ── Socket data (stored per socket) ──────────
+// ── Per-socket metadata ───────────────────────
 
 export interface SocketData {
   playerId: string;
@@ -110,16 +153,7 @@ export interface SocketData {
   roomId: string | null;
 }
 
-// ── Helpers ───────────────────────────────────
-
-/**
- * Standard acknowledgement envelope.
- * Every client-emitted event that expects confirmation
- * receives one of these in the callback.
- */
-export type AckResponse<T> =
-  | { success: true;  data: T }
-  | { success: false; error: SocketError };
+// ── Chat ─────────────────────────────────────
 
 export interface ChatMessage {
   id: string;

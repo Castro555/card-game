@@ -1,65 +1,115 @@
 // ─────────────────────────────────────────────
 //  game.types.ts
-//  The full runtime state of a game session.
-//  This is what the server holds in Redis and
-//  broadcasts (projected) to each client.
+//  Full runtime state of a Scopa-variant game.
+//
+//  Key concepts:
+//  - tableCards   : face-up cards anyone can capture
+//  - capturedPile : each player's personal pile (scoring)
+//  - scopas       : table-clear bonus counter per player
+//  - dealNumber   : which dealing round we are in (1-based)
+//  - lastCapturePlayerId : receives remaining table cards
+//                          after the final play
 // ─────────────────────────────────────────────
 
-import type { Card }          from "./card.types";
-import type { PublicPlayer }  from "./player.types";
+import type { Card }         from "./card.types";
+import type { PublicPlayer } from "./player.types";
 
 // ── Phase ─────────────────────────────────────
 
 export enum GamePhase {
-  /** Cards being dealt, not yet interactive */
+  /** Distributing cards to players (and table on deal 1) */
   Dealing    = "DEALING",
-  /** Waiting for the current player's action */
+  /** Waiting for the active player's action */
   Playing    = "PLAYING",
-  /** Evaluating who won the trick / round */
+  /**
+   * All cards have been played; assigning remaining table cards
+   * to the last player who made a successful capture.
+   */
   Evaluating = "EVALUATING",
-  /** Round over; scores updated */
-  RoundEnd   = "ROUND_END",
-  /** All rounds done; winner decided */
+  /** Tallying captured piles → awarding point categories */
+  Scoring    = "SCORING",
+  /** A player reached targetScore; match over */
   GameOver   = "GAME_OVER",
 }
 
 // ── Turn ─────────────────────────────────────
 
 export interface Turn {
-  /** ID of the player whose turn it is */
   currentPlayerId: string;
-  /** Turn number within the current round (1-indexed) */
+  /** 1-based index within the current deal */
   turnNumber: number;
-  /** ISO timestamp when this turn started (for timeout tracking) */
-  startedAt: string;
-  /** Seconds the player has to act before auto-skip */
+  startedAt: string;       // ISO timestamp
   timeoutSeconds: number;
 }
 
-// ── Trick (one play cycle around the table) ───
+// ── Player actions (client → server) ─────────
 
-export interface TrickCard {
+/**
+ * The player plays a card from their hand AND captures one or
+ * more table cards whose values + handCard.value === 15.
+ * The server validates the sum before accepting.
+ */
+export interface CaptureAction {
+  type: "capture";
+  handCardId: string;
+  /** IDs of table cards to capture. Must sum to 15 with handCard. */
+  tableCardIds: string[];
+}
+
+/**
+ * The player places a card from their hand onto the table.
+ * No capture is made — either by choice or because none is possible.
+ */
+export interface LayAction {
+  type: "lay";
+  handCardId: string;
+}
+
+export type GameAction = CaptureAction | LayAction;
+
+// ── Capture event record ──────────────────────
+
+export interface CaptureRecord {
   playerId: string;
-  card: Card;
-  /** Order in which the card was played this trick */
-  playOrder: number;
+  handCard: Card;
+  capturedCards: Card[];   // tableCards taken + handCard itself
+  wasScopa: boolean;       // true if the table was left empty
+  turnNumber: number;
 }
 
-export interface Trick {
-  trickNumber: number;
-  cards: TrickCard[];
-  /** ID of the player who won this trick (null while in progress) */
-  winnerId: string | null;
+// ── End-of-game scoring ───────────────────────
+
+export interface PlayerScoreBreakdown {
+  playerId: string;
+  playerName: string;
+
+  /** 1 point per scopa scored during the game */
+  scopaPoints: number;
+
+  /** 1 point for most cards in captured pile (no award on draw) */
+  mostCardsPoint: number;
+
+  /** 1 point for most Diamonds in captured pile (no award on draw) */
+  mostDiamondsPoint: number;
+
+  /** 1 point for most Sevens in captured pile (no award on draw) */
+  mostSevensPoint: number;
+
+  /** 1 point for holding the Seven of Diamonds */
+  sevenOfDiamondsPoint: number;
+
+  /** Sum of all the above */
+  totalPoints: number;
 }
 
-// ── Round result ──────────────────────────────
-
-export interface RoundResult {
-  roundNumber: number;
-  /** Points earned this round, keyed by playerId */
-  pointsEarned: Record<string, number>;
-  /** ID of the player with the highest score this round */
-  roundWinnerId: string;
+export interface GameScoreResult {
+  breakdown: PlayerScoreBreakdown[];
+  /** Player with the highest totalPoints this game */
+  gameWinnerId: string;
+  /** Updated cumulative match scores keyed by playerId */
+  matchScores: Record<string, number>;
+  /** Set when a player has reached or exceeded targetScore */
+  matchWinnerId: string | null;
 }
 
 // ── Core game state ───────────────────────────
@@ -67,46 +117,60 @@ export interface RoundResult {
 export interface GameState {
   roomId: string;
   phase: GamePhase;
-  /** Public view of players (hand contents hidden for opponents) */
+
+  /** Public projection of all players */
   players: PublicPlayer[];
-  /** Cards remaining in the draw pile */
+
+  /** Cards currently face-up on the table, available for capture */
+  tableCards: Card[];
+
+  /** Number of cards remaining in the draw pile */
   deckCount: number;
-  /** Cards on the discard pile (top card visible) */
-  discardPile: Card[];
+
+  /**
+   * Which dealing round we are in (1-based).
+   * Increments each time all hands have been emptied and new
+   * cards are distributed.
+   *
+   * Max values: 2p→6, 3p→4, 4p→3
+   */
+  dealNumber: number;
+
+  /** Total dealing rounds for this game (derived from player count) */
+  totalDeals: number;
+
   currentTurn: Turn;
-  currentTrick: Trick;
-  completedTricks: Trick[];
-  currentRound: number;
-  totalRounds: number;
-  roundResults: RoundResult[];
-  /** Cumulative scores keyed by playerId */
-  scores: Record<string, number>;
-  /** Set when phase === GameOver */
-  winnerId: string | null;
-  /** ISO timestamp of last state change */
-  updatedAt: string;
+
+  /**
+   * ID of the last player who successfully captured cards.
+   * At the end of the final deal, remaining table cards go to them.
+   */
+  lastCapturePlayerId: string | null;
+
+  /** Running log of every capture made this game */
+  captureHistory: CaptureRecord[];
+
+  /** Points needed to win the match */
+  targetScore: number;
+
+  /** Cumulative match scores keyed by playerId */
+  matchScores: Record<string, number>;
+
+  /** Populated once phase transitions to Scoring / GameOver */
+  scoreResult: GameScoreResult | null;
+
+  updatedAt: string; // ISO timestamp
 }
 
-// ── Action payloads (client → server) ────────
-
-export interface PlayCardAction {
-  cardId: string;
-}
-
-export interface DrawCardAction {
-  /** "deck" draws from the pile, "discard" takes the top discard */
-  source: "deck" | "discard";
-}
-
-// ── Projected state (server → specific client) ─
+// ── Personalised snapshot (server → one client) ──
 
 /**
- * The server sends each player a personalised snapshot:
- * their own hand is fully visible, others are counts only.
+ * Sent to each client individually.
+ * myHand contains the real Card objects (suit + rank visible).
+ * Other players' hands are PublicPlayer (cardCount only).
  */
 export interface PersonalGameState extends Omit<GameState, "players"> {
   players: PublicPlayer[];
-  /** This client's own full hand */
   myHand: Card[];
   myPlayerId: string;
 }

@@ -1,63 +1,72 @@
 // ─────────────────────────────────────────────
 //  player.types.ts
-//  Everything that describes a participant in
-//  a game session, from lobby to end screen.
+//  A participant from lobby through end screen.
 // ─────────────────────────────────────────────
 
-import type { AnyCard } from "./card.types";
+import type { AnyCard, Card } from "./card.types";
 
-// ── Status ────────────────────────────────────
+// ── Status & role ─────────────────────────────
 
 export enum PlayerStatus {
-  /** Connected and in the lobby, not yet in a room */
-  Idle        = "IDLE",
-  /** Sitting in a room, waiting for the game to start */
-  InLobby     = "IN_LOBBY",
-  /** Actively playing a game */
-  Playing     = "PLAYING",
-  /** Temporarily disconnected, may reconnect */
+  Idle         = "IDLE",
+  InLobby      = "IN_LOBBY",
+  Playing      = "PLAYING",
   Disconnected = "DISCONNECTED",
 }
 
 export enum PlayerRole {
-  /** Created the room; can start the game */
-  Host   = "HOST",
-  /** Joined an existing room */
-  Guest  = "GUEST",
+  Host  = "HOST",
+  Guest = "GUEST",
 }
 
 // ── Core model ───────────────────────────────
 
 export interface Player {
-  /** Socket ID assigned on connection */
+  /** Socket ID */
   id: string;
   name: string;
   status: PlayerStatus;
   role: PlayerRole;
-  /** Cards currently in this player's hand.
-   *  Opponents only see HiddenCard entries. */
+
+  /** Cards currently held (max 3).
+   *  Other players only see HiddenCard entries. */
   hand: AnyCard[];
-  /** Cumulative score across rounds */
-  score: number;
-  /** Whether this player has finished their turn action */
-  hasActed: boolean;
-  /** ISO timestamp of the last received message */
-  lastSeenAt: string;
+
+  /**
+   * Cards the player has captured during the game.
+   * Used at the end to compute all scoring categories.
+   * Visible to everyone (face-up) — no information hiding needed.
+   */
+  capturedPile: Card[];
+
+  /**
+   * Number of "Scopas" scored — each time this player
+   * cleared the table completely by summing 15.
+   */
+  scopas: number;
+
+  /** Cumulative match score across games */
+  matchScore: number;
+
+  /** Consecutive turns skipped due to timeout */
+  consecutiveSkips: number;
+
+  lastSeenAt: string; // ISO timestamp
 }
 
-// ── Derived / view models ─────────────────────
+// ── Projected views ───────────────────────────
 
 /**
- * Safe projection sent to OTHER players — hides hand contents.
- * The server strips the actual cards before broadcasting.
+ * What OTHER players see:
+ * - hand contents hidden (only count exposed)
+ * - capturedPile visible (card count matters strategically)
  */
 export type PublicPlayer = Omit<Player, "hand"> & {
-  /** Number of cards still in hand (not their identity) */
   cardCount: number;
 };
 
-/** What the player sees about themselves: full hand visible */
-export type PrivatePlayer = Player;
+/** What the player sees about themselves: full hand revealed */
+export type PrivatePlayer = Player & { hand: Card[] };
 
 // ── Helpers ───────────────────────────────────
 
@@ -67,4 +76,8 @@ export function isHost(player: Pick<Player, "role">): boolean {
 
 export function isConnected(player: Pick<Player, "status">): boolean {
   return player.status !== PlayerStatus.Disconnected;
+}
+
+export function capturedCardCount(player: Pick<Player, "capturedPile">): number {
+  return player.capturedPile.length;
 }
