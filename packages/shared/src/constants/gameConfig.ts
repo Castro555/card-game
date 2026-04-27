@@ -1,85 +1,122 @@
 // ─────────────────────────────────────────────
 //  gameConfig.ts
-//  All tuneable game parameters in one place.
+//  All tuneable game parameters.
 //  Change here → takes effect everywhere.
 // ─────────────────────────────────────────────
 
 // ── Room ─────────────────────────────────────
 
 export const RoomConfig = {
-  /** Minimum players required to start a game */
   MIN_PLAYERS: 2,
-
-  /** Maximum players allowed per room */
   MAX_PLAYERS: 4,
-
-  /** Length of the human-readable room code, e.g. "XK92" */
   ROOM_CODE_LENGTH: 4,
-
-  /** Minutes of inactivity before an empty room is purged from Redis */
+  /** Minutes before an empty/idle room is purged from Redis */
   ROOM_TTL_MINUTES: 120,
-
-  /** Seconds the host has to start after all players are ready */
-  START_TIMEOUT_SECONDS: 300,
 } as const;
 
-// ── Deck & hands ─────────────────────────────
+// ── Deck & dealing ────────────────────────────
 
 export const DeckConfig = {
-  /** Cards in a standard deck */
+  /** 4 suits × 10 ranks (Ace–Ten, no face cards) */
   TOTAL_CARDS: 40,
 
-  /** Cards dealt to each player at round start */
+  /** Cards dealt to each player per dealing round */
   INITIAL_HAND_SIZE: 3,
 
-  /** Maximum cards a player may hold at any time */
+  /**
+   * A player's hand never exceeds 3 — new cards are only dealt
+   * when all players have emptied their hands.
+   */
   MAX_HAND_SIZE: 3,
+
+  /** Cards placed face-up on the table at game start */
+  TABLE_INITIAL_CARDS: 4,
+
+  /**
+   * Cards available for dealing to players after table setup:
+   * 40 - 4 = 36.
+   *
+   * Dealing rounds per player count:
+   *   2 players → 36 ÷ (2×3) = 6 deals
+   *   3 players → 36 ÷ (3×3) = 4 deals
+   *   4 players → 36 ÷ (4×3) = 3 deals
+   */
+  CARDS_FOR_PLAYERS: 36,
 } as const;
 
-// ── Turns & timing ────────────────────────────
+// ── Turn & timing ─────────────────────────────
 
 export const TurnConfig = {
   /** Seconds before the server auto-skips an idle player */
   TURN_TIMEOUT_SECONDS: 30,
 
-  /** Grace period (seconds) added after a reconnection */
+  /** Extra seconds given after a reconnection */
   RECONNECT_GRACE_SECONDS: 15,
 
-  /** Maximum consecutive skips before a player is kicked */
+  /** Consecutive auto-skips before a player is removed */
   MAX_CONSECUTIVE_SKIPS: 3,
 } as const;
 
-// ── Rounds & scoring ──────────────────────────
+// ── Scoring ───────────────────────────────────
 
 export const ScoringConfig = {
-  /** Default number of rounds in a game */
-  DEFAULT_TOTAL_ROUNDS: 3,
+  /**
+   * Default points needed to win the match.
+   * The host can configure this at room creation.
+   */
+  DEFAULT_TARGET_SCORE: 11,
 
-  /** Maximum rounds the host can configure */
-  MAX_TOTAL_ROUNDS: 10,
+  /** Minimum target score the host can set */
+  MIN_TARGET_SCORE: 5,
 
-  /** Points awarded per trick won */
-  POINTS_PER_TRICK: 10,
+  /** Maximum target score the host can set */
+  MAX_TARGET_SCORE: 31,
 
-  /** Bonus awarded for winning a full round */
-  ROUND_WIN_BONUS: 50,
+  // ── Point categories (each worth exactly 1 pt) ──
 
-  /** Penalty deducted for being skipped due to timeout */
-  TIMEOUT_PENALTY: -5,
+  /** Each time a player clears the table by summing 15 */
+  POINTS_PER_SCOPA: 1,
+
+  /** Awarded to the player with the most cards in their captured pile */
+  POINTS_MOST_CARDS: 1,
+
+  /** Awarded to the player with the most Diamonds in their captured pile */
+  POINTS_MOST_DIAMONDS: 1,
+
+  /** Awarded to the player with the most Sevens in their captured pile */
+  POINTS_MOST_SEVENS: 1,
+
+  /** Awarded to the player holding the Seven of Diamonds */
+  POINTS_SEVEN_OF_DIAMONDS: 1,
+
+  /**
+   * Draws in most-cards, most-diamonds, most-sevens award NO points.
+   * Only a strict majority wins the point.
+   */
+  DRAW_AWARDS_NO_POINT: true,
 } as const;
 
 // ── Connection ────────────────────────────────
 
 export const ConnectionConfig = {
-  /** Seconds before a disconnected player is removed from the room */
+  /** Seconds before a disconnected player slot is freed */
   DISCONNECT_TIMEOUT_SECONDS: 60,
-
-  /** Socket.io ping interval (ms) */
   PING_INTERVAL_MS: 25_000,
-
-  /** Socket.io ping timeout (ms) */
-  PING_TIMEOUT_MS: 10_000,
+  PING_TIMEOUT_MS:  10_000,
 } as const;
+
+// ── Helpers ───────────────────────────────────
+
+/**
+ * Returns how many dealing rounds fit for a given player count.
+ * Throws if playerCount is outside the allowed range.
+ */
+export function totalDealsForPlayerCount(playerCount: number): number {
+  if (playerCount < RoomConfig.MIN_PLAYERS || playerCount > RoomConfig.MAX_PLAYERS) {
+    throw new Error(`Invalid player count: ${playerCount}`);
+  }
+  return DeckConfig.CARDS_FOR_PLAYERS / (playerCount * DeckConfig.INITIAL_HAND_SIZE);
+}
 
 // ── Convenience re-export ─────────────────────
 

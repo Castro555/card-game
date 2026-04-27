@@ -1,11 +1,12 @@
 // ─────────────────────────────────────────────
 //  events.ts
 //  Single source of truth for every Socket.io
-//  event name. Use these constants instead of
-//  raw strings to prevent typo-driven bugs.
+//  event name. Always use these constants —
+//  never raw strings — to catch typos at
+//  compile time rather than at runtime.
 // ─────────────────────────────────────────────
 
-// ── Room events ───────────────────────────────
+// ── Room ─────────────────────────────────────
 
 export const RoomEvents = {
   // Client → Server
@@ -20,36 +21,37 @@ export const RoomEvents = {
   PlayerLeft:   "room:playerLeft",
 } as const;
 
-// ── Game events ───────────────────────────────
+// ── Game ──────────────────────────────────────
 
 export const GameEvents = {
   // Client → Server
-  PlayCard:   "game:playCard",
-  DrawCard:   "game:drawCard",
+  Action:            "game:action",       // CaptureAction | LayAction
 
   // Server → Client
-  Started:    "game:started",
-  StateUpdate:"game:stateUpdate",
-  YourTurn:   "game:yourTurn",
-  TurnSkipped:"game:turnSkipped",
-  RoundEnded: "game:roundEnded",
-  Ended:      "game:ended",
+  Started:           "game:started",
+  StateUpdate:       "game:stateUpdate",
+  YourTurn:          "game:yourTurn",
+  TurnSkipped:       "game:turnSkipped",
+  NewDeal:           "game:newDeal",
+  TableCardsAwarded: "game:tableCardsAwarded",
+  Scored:            "game:scored",
+  Ended:             "game:ended",
 } as const;
 
-// ── Player events ─────────────────────────────
+// ── Player ────────────────────────────────────
 
 export const PlayerEvents = {
   Reconnected:  "player:reconnected",
   Disconnected: "player:disconnected",
 } as const;
 
-// ── Chat events ───────────────────────────────
+// ── Chat ──────────────────────────────────────
 
 export const ChatEvents = {
   Message: "chat:message",
 } as const;
 
-// ── System events ─────────────────────────────
+// ── System ────────────────────────────────────
 
 export const SystemEvents = {
   Error: "error",
