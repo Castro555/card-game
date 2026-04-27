@@ -22,9 +22,6 @@ export enum Rank {
   Eight = 8,
   Nine  = 9,
   Ten   = 10,
-  Jack  = 11,
-  Queen = 12,
-  King  = 13,
 }
 
 export interface Card {
@@ -63,9 +60,6 @@ export function rankLabel(rank: Rank): string {
     [Rank.Eight]: "8",
     [Rank.Nine]:  "9",
     [Rank.Ten]:   "10",
-    [Rank.Jack]:  "J",
-    [Rank.Queen]: "Q",
-    [Rank.King]:  "K",
   };
   return labels[rank];
 }
